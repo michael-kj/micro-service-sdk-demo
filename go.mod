@@ -17,4 +17,5 @@ require (
 	github.com/google/uuid v1.1.1 // indirect
 	go.etcd.io/etcd v3.3.22+incompatible
 	go.uber.org/zap v1.15.0 // indirect
+	google.golang.org/grpc v1.23.0
 )

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/clientv3/namespace"
+	"google.golang.org/grpc"
 	"log"
 	"sync"
 	"time"
@@ -88,11 +89,13 @@ func (e *EtcdClient) Connect() error {
 		DialTimeout:          5 * time.Second,
 		DialKeepAliveTime:    5 * time.Second,
 		DialKeepAliveTimeout: 5 * time.Second,
+		DialOptions: []grpc.DialOption{grpc.WithBlock()},
 	})
 	if err != nil {
 		fmt.Println(err)
 		return err
 	}
+
 	e.c = cli
 	return nil
 
@@ -104,8 +107,9 @@ func (e *EtcdClient) Watch() {
 }
 
 func (e *EtcdClient) Load() error{
-
-	resp, err := e.c.Get(context.Background(),fmt.Sprintf("%s/", e.ProjectNameSpace), clientv3.WithPrefix())
+	//ctx,_:=context.WithTimeout(context.Background(),time.Second)
+	ctx :=context.Background()
+	resp, err := e.c.Get(ctx,fmt.Sprintf("%s/", e.ProjectNameSpace), clientv3.WithPrefix())
 	if err != nil {
 		log.Printf("err:%s \n",err)
 	}
