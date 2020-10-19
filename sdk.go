@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/clientv3/namespace"
 	"google.golang.org/grpc"
 	"log"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -22,8 +24,9 @@ type Client interface {
 
 type Storage interface {
 	Set(key string, value []byte)
-	GetString(key string) (string,error)
-	GetBytes(key string) ( []byte,error)
+	GetString(key string) (string, error)
+	GetInt(key string) (*int, error)
+	GetBytes(key string) ([]byte, error)
 	GetObject(key string, target interface{}) error
 	Init() error
 }
@@ -39,31 +42,49 @@ func (m *MapStorage) Set(key string, value []byte) {
 	m.lock.Unlock()
 
 }
-func (m *MapStorage) GetString(key string) ( string,error) {
-	m.lock.RLock()
-	value, ok := m.d[key]
-	v := string(value)
-	if !ok {
-		return  v,NotExistError
+func (m *MapStorage) GetString(key string) (string, error) {
+	data, err := m.GetBytes(key)
+	if err != nil {
+		return "", err
 	}
-	m.lock.RUnlock()
-	return  v,nil
+	return string(data), nil
 }
 
-func (m *MapStorage) GetBytes(key string) ([]byte,error) {
+func (m *MapStorage) GetInt(key string) (*int, error) {
+	data, err := m.GetString(key)
+
+	if err != nil {
+		return nil, err
+	}
+	i, err := strconv.Atoi(data)
+	if err != nil {
+		return nil, err
+	}
+	return &i, nil
+}
+
+func (m *MapStorage) GetBytes(key string) ([]byte, error) {
 	m.lock.RLock()
 
 	value, ok := m.d[key]
 
 	if !ok {
-		return  value,NotExistError
+		return value, NotExistError
 	}
 	m.lock.RUnlock()
 
-	return  value,nil
+	return value, nil
 }
 
 func (m *MapStorage) GetObject(key string, target interface{}) error {
+	data, err := m.GetBytes(key)
+	if err != nil {
+		return err
+	}
+	err = json.Unmarshal(data, target)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -72,9 +93,6 @@ func (m *MapStorage) Init() error {
 		m.d = make(map[string][]byte)
 	}
 	return nil
-}
-
-type Value struct {
 }
 
 type EtcdClient struct {
@@ -89,7 +107,7 @@ func (e *EtcdClient) Connect() error {
 		DialTimeout:          5 * time.Second,
 		DialKeepAliveTime:    5 * time.Second,
 		DialKeepAliveTimeout: 5 * time.Second,
-		DialOptions: []grpc.DialOption{grpc.WithBlock()},
+		DialOptions:          []grpc.DialOption{grpc.WithBlock()},
 	})
 	if err != nil {
 		fmt.Println(err)
@@ -106,15 +124,16 @@ func (e *EtcdClient) Watch() {
 	go e.watch()
 }
 
-func (e *EtcdClient) Load() error{
+func (e *EtcdClient) Load() error {
 	//ctx,_:=context.WithTimeout(context.Background(),time.Second)
-	ctx :=context.Background()
-	resp, err := e.c.Get(ctx,fmt.Sprintf("%s/", e.ProjectNameSpace), clientv3.WithPrefix())
+	ctx := context.Background()
+	resp, err := e.c.Get(ctx, fmt.Sprintf("%s/", e.ProjectNameSpace), clientv3.WithPrefix())
 	if err != nil {
-		log.Printf("err:%s \n",err)
+		log.Printf("err:%s \n", err)
+		return err
 	}
 	for _, ev := range resp.Kvs {
-		e.Set(string(ev.Key),ev.Value)
+		e.Set(string(ev.Key), ev.Value)
 		log.Printf("%s : %s\n", ev.Key, ev.Value)
 	}
 	return nil
@@ -139,13 +158,22 @@ func (e *EtcdClient) SetStorage(s Storage) error {
 	return nil
 }
 
-
 func (e *EtcdClient) Set(key string, value []byte) {
 
-	e.storage.Set(key,value)
+	e.storage.Set(key, value)
 
 }
-func (e *EtcdClient) GetString(key string) (string,error) {
+func (e *EtcdClient) GetString(key string) (string, error) {
 
 	return e.storage.GetString(key)
+}
+
+func (e *EtcdClient) GetInt(key string) (*int, error) {
+
+	return e.storage.GetInt(key)
+}
+
+func (e *EtcdClient) GetObject(key string, target interface{}) error {
+
+	return e.storage.GetObject(key, target)
 }
